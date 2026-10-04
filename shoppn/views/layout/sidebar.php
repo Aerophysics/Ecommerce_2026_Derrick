@@ -15,16 +15,5 @@
 // features (Tasks 5-10) being built yet.
 ?>
 <aside>
-    <section>
-        <h3>Categories</h3>
-        <ul>
-            <li>Coming soon</li>
-        </ul>
-    </section>
-    <section>
-        <h3>Brands</h3>
-        <ul>
-            <li>Coming soon</li>
-        </ul>
-    </section>
+
 </aside>
