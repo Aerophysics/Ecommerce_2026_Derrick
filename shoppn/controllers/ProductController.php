@@ -106,4 +106,63 @@ class ProductController
     {
         return $this->product->updateCategory($id, $name);
     }
+
+    // ============================================================
+    // Product Customer-Facing Methods (Task 10)
+    // ============================================================
+
+    /**
+     * Expose model method to get featured products.
+     *
+     * @param int $limit Max number of products to return (default 6)
+     * @return array
+     */
+    public function getFeaturedProducts($limit = 6)
+    {
+        return $this->product->getFeaturedProducts($limit);
+    }
+
+    /**
+     * Expose model method to get products by category.
+     *
+     * @param int $cat_id
+     * @return array
+     */
+    public function getProductsByCategory($cat_id)
+    {
+        return $this->product->getProductsByCategory($cat_id);
+    }
+
+    /**
+     * Expose model method to get products by brand.
+     *
+     * @param int $brand_id
+     * @return array
+     */
+    public function getProductsByBrand($brand_id)
+    {
+        return $this->product->getProductsByBrand($brand_id);
+    }
+
+    /**
+     * Expose model method to search products by keyword.
+     *
+     * @param string $query
+     * @return array
+     */
+    public function searchProducts($query)
+    {
+        return $this->product->searchProducts($query);
+    }
+
+    /**
+     * Expose model method to get a single product by ID.
+     *
+     * @param int $id
+     * @return array|false
+     */
+    public function getProductById($id)
+    {
+        return $this->product->getProductById($id);
+    }
 }

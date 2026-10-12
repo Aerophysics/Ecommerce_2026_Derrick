@@ -1,0 +1,16 @@
+<?php
+	// TEMPLATE — copy this file to core/db_cred.php and fill in real values.
+	// core/db_cred.php is gitignored so real credentials never reach the repo.
+	//
+	// This file stores the database connection settings in one place.
+	// Keeping credentials here (instead of inside db_class.php) means
+	// you only have to update them in one spot if the database changes.
+
+	// define() creates a global constant - a named value that cannot
+	// be changed anywhere else in the app once it is set here.
+
+	define("DATABASE", "your_database_name"); // name of the database to connect to
+	define("SERVER", "localhost");            // where the database server is running
+	define("USERNAME", "your_db_user");       // MySQL username
+	define("PASSWD", "your_db_password");     // MySQL password (empty for local XAMPP by default)
+?>

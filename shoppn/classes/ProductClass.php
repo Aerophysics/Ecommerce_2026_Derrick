@@ -109,4 +109,95 @@ class ProductClass extends Database
         $sql = "UPDATE categories SET cat_name = ? WHERE cat_id = ?";
         return $this->execute($sql, [$name, $id]);
     }
+
+    // ============================================================
+    // Product Customer-Facing Methods (Task 10)
+    // ============================================================
+
+    /**
+     * Retrieve featured products chosen randomly up to the given limit.
+     * Mirrors the original getPro() function.
+     *
+     * @param int $limit Max number of products to return (default 6)
+     * @return array Array of product rows (empty array if no results)
+     */
+    public function getFeaturedProducts($limit = 6)
+    {
+        $sql = "SELECT p.*, c.cat_name, b.brand_name 
+                FROM products p
+                LEFT JOIN categories c ON p.product_cat = c.cat_id
+                LEFT JOIN brands b ON p.product_brand = b.brand_id
+                ORDER BY RAND() LIMIT ?";
+        $rows = $this->fetchAll($sql, [(int) $limit]);
+        return is_array($rows) ? $rows : [];
+    }
+
+    /**
+     * Retrieve products belonging to a specific category.
+     *
+     * @param int $cat_id Category ID
+     * @return array Array of product rows (empty array if no results)
+     */
+    public function getProductsByCategory($cat_id)
+    {
+        $sql = "SELECT p.*, c.cat_name, b.brand_name 
+                FROM products p
+                LEFT JOIN categories c ON p.product_cat = c.cat_id
+                LEFT JOIN brands b ON p.product_brand = b.brand_id
+                WHERE p.product_cat = ?";
+        $rows = $this->fetchAll($sql, [(int) $cat_id]);
+        return is_array($rows) ? $rows : [];
+    }
+
+    /**
+     * Retrieve products belonging to a specific brand.
+     *
+     * @param int $brand_id Brand ID
+     * @return array Array of product rows (empty array if no results)
+     */
+    public function getProductsByBrand($brand_id)
+    {
+        $sql = "SELECT p.*, c.cat_name, b.brand_name 
+                FROM products p
+                LEFT JOIN categories c ON p.product_cat = c.cat_id
+                LEFT JOIN brands b ON p.product_brand = b.brand_id
+                WHERE p.product_brand = ?";
+        $rows = $this->fetchAll($sql, [(int) $brand_id]);
+        return is_array($rows) ? $rows : [];
+    }
+
+    /**
+     * Search products by keyword in product_title or product_keywords.
+     *
+     * @param string $query Search keyword
+     * @return array Array of product rows (empty array if no results)
+     */
+    public function searchProducts($query)
+    {
+        $term = '%' . $query . '%';
+        $sql = "SELECT p.*, c.cat_name, b.brand_name 
+                FROM products p
+                LEFT JOIN categories c ON p.product_cat = c.cat_id
+                LEFT JOIN brands b ON p.product_brand = b.brand_id
+                WHERE p.product_title LIKE ? OR p.product_keywords LIKE ?";
+        $rows = $this->fetchAll($sql, [$term, $term]);
+        return is_array($rows) ? $rows : [];
+    }
+
+    /**
+     * Retrieve a single product by its primary key ID.
+     *
+     * @param int $id Product ID
+     * @return array|false Row associative array or false if not found
+     */
+    public function getProductById($id)
+    {
+        $sql = "SELECT p.*, c.cat_name, b.brand_name 
+                FROM products p
+                LEFT JOIN categories c ON p.product_cat = c.cat_id
+                LEFT JOIN brands b ON p.product_brand = b.brand_id
+                WHERE p.product_id = ?";
+        $row = $this->fetchOne($sql, [(int) $id]);
+        return $row ?: false;
+    }
 }

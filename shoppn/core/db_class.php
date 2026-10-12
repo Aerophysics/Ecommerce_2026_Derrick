@@ -66,11 +66,19 @@ class Database
         // Prepare the query (PDO checks its structure before running it)
         $stmt = $this->conn->prepare($sql);
 
-        // Run the query, safely substituting $params in place of the "?" marks
-        $stmt->execute($params);
+        // Safely bind parameters with appropriate data types (e.g. PARAM_INT for LIMIT)
+        foreach ($params as $key => $val) {
+            $paramIndex = is_int($key) ? $key + 1 : $key;
+            $type = is_int($val) ? PDO::PARAM_INT : PDO::PARAM_STR;
+            $stmt->bindValue($paramIndex, $val, $type);
+        }
 
-        // Return every matching row as an associative array
-        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        // Run the query
+        $stmt->execute();
+
+        // Return every matching row as an associative array (or empty array if none)
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        return is_array($rows) ? $rows : [];
     }
 
     // Execute a SELECT query that is only expected to return one row
@@ -79,10 +87,17 @@ class Database
     {
         $stmt = $this->conn->prepare($sql);
 
-        $stmt->execute($params);
+        foreach ($params as $key => $val) {
+            $paramIndex = is_int($key) ? $key + 1 : $key;
+            $type = is_int($val) ? PDO::PARAM_INT : PDO::PARAM_STR;
+            $stmt->bindValue($paramIndex, $val, $type);
+        }
+
+        $stmt->execute();
 
         // fetch() (no "All") returns just the first matching row
-        return $stmt->fetch(PDO::FETCH_ASSOC);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        return $row ?: false;
     }
 
     // Execute INSERT, UPDATE and DELETE statements.
@@ -91,7 +106,13 @@ class Database
     {
         $stmt = $this->conn->prepare($sql);
 
-        return $stmt->execute($params);
+        foreach ($params as $key => $val) {
+            $paramIndex = is_int($key) ? $key + 1 : $key;
+            $type = is_int($val) ? PDO::PARAM_INT : PDO::PARAM_STR;
+            $stmt->bindValue($paramIndex, $val, $type);
+        }
+
+        return $stmt->execute();
     }
 
     // Get the raw PDO connection if a child class ever needs to do
