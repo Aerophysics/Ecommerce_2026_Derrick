@@ -1,44 +1,42 @@
 <?php
-// login.php - the login form (View layer). Minimal PHP: shows a session
-// error and the form. No SQL or business logic here.
-require_once __DIR__ . "/../core/core.php";
+/**
+ * login.php — the login form (View).
+ */
+require_once __DIR__ . '/../core/core.php';
 
 if (is_logged_in()) {
-    redirect(BASE_URL . '/index.php');
+    redirect(app_url('views/account/my_account.php'));
 }
 
-$error = $_SESSION['error'] ?? '';
-unset($_SESSION['error']);
-
-require_once __DIR__ . "/layout/header.php";
+$page_title = 'Login';
+require_once __DIR__ . '/layout/header.php';
 ?>
+<div class="card">
+    <h1>Log in</h1>
+    <p class="sub">Welcome back to shoppn.</p>
 
-<section>
-    <h2>Log in</h2>
+    <?php require __DIR__ . '/layout/flash.php'; ?>
 
-    <?php if ($error !== ''): ?>
-        <p role="alert"><?php echo htmlspecialchars($error); ?></p>
-    <?php endif; ?>
-
-    <form id="loginForm" action="<?= BASE_URL ?>/actions/login_action.php" method="POST" novalidate>
-        <div>
+    <form id="login-form" action="<?php echo app_url('actions/login_action.php'); ?>" method="POST" novalidate>
+        <?php echo csrf_field(); ?>
+        <div class="form-row">
             <label for="login_email">Email</label>
-            <input type="text" name="customer_email" id="login_email" maxlength="50">
-            <span id="err_login_email"></span>
+            <input type="email" id="login_email" name="login_email" maxlength="50">
+            <div class="field-error" id="error-login-email"></div>
         </div>
-        <div>
+
+        <div class="form-row">
             <label for="login_pass">Password</label>
-            <input type="password" name="customer_pass" id="login_pass">
-            <span id="err_login_pass"></span>
+            <input type="password" id="login_pass" name="login_pass">
+            <div class="field-error" id="error-login-pass"></div>
         </div>
-        <div>
-            <button type="submit" id="loginBtn">Log in</button>
-        </div>
+
+        <button type="submit" class="btn" id="login-submit">Log in</button>
     </form>
 
-    <p>Don't have an account? <a href="<?= BASE_URL ?>/views/register.php">Register</a>.</p>
-</section>
+    <p class="form-foot">New to shoppn?
+        <a href="<?php echo app_url('views/register.php'); ?>">Create an account</a>.</p>
+</div>
 
-<script src="<?= BASE_URL ?>/js/validate.js"></script>
-
-<?php require_once __DIR__ . "/layout/footer.php"; ?>
+<script src="<?php echo app_url('js/validate.js'); ?>"></script>
+<?php require_once __DIR__ . '/layout/footer.php'; ?>

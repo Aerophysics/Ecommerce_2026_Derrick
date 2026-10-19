@@ -1,111 +1,87 @@
 <?php
-// Guard admin access before any HTML or output
-require_once __DIR__ . "/../../core/core.php";
-require_admin();
+/**
+ * category.php — admin: add / edit categories (View). Tasks 7 & 8.
+ *
+ * Intentionally the same shape as views/admin/brand.php — the second pass
+ * through the MVC flow. The View renders; actions/add_category_action.php
+ * and actions/update_category_action.php do the writing.
+ *
+ * Security: require_admin() runs before ANY output.
+ */
 
-require_once __DIR__ . "/../../controllers/ProductController.php";
+require_once __DIR__ . '/../../core/core.php';
+require_admin();
+require_once __DIR__ . '/../../controllers/ProductController.php';
 
 $controller = new ProductController();
 
-// Edit Mode Check
-$is_edit_mode = false;
-$edit_cat_id = null;
-$edit_cat_name = '';
+// Task 8 — edit mode whenever a valid ?edit_id=N names a real category.
+$editId   = filter_input(INPUT_GET, 'edit_id', FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+$editCat  = $editId ? $controller->getCategoryById($editId) : false;
 
-if (isset($_GET['edit_id'])) {
-    $edit_id = filter_var($_GET['edit_id'], FILTER_VALIDATE_INT);
-    if ($edit_id && $edit_id > 0) {
-        $cat_data = $controller->getCategoryById($edit_id);
-        if ($cat_data) {
-            $is_edit_mode = true;
-            $edit_cat_id = $cat_data['cat_id'];
-            $edit_cat_name = $cat_data['cat_name'];
-        } else {
-            $_SESSION['error'] = 'Category not found.';
-        }
-    }
-}
-
-// Session Notifications
-$success_msg = $_SESSION['success'] ?? '';
-$error_msg   = $_SESSION['error'] ?? '';
-unset($_SESSION['success'], $_SESSION['error']);
-
-// Fetch All Categories
+// Task 7 — the full list shown below the form.
 $categories = $controller->getAllCategories();
 
-require_once __DIR__ . "/../layout/header.php";
+$page_title = 'Admin — Categories';
+require_once __DIR__ . '/../layout/header.php';
 ?>
+<div class="card wide">
+    <h1><?php echo $editCat ? 'Edit Category' : 'Manage Categories'; ?></h1>
+    <p class="sub">Categories group products by kind.</p>
 
-<section class="admin-category-section">
-    <h2>Product Categories Management</h2>
+    <?php require __DIR__ . '/../layout/flash.php'; ?>
 
-    <?php if (!empty($success_msg)): ?>
-        <p class="alert alert-success" role="alert"><?php echo htmlspecialchars($success_msg); ?></p>
-    <?php endif; ?>
-
-    <?php if (!empty($error_msg)): ?>
-        <p class="alert alert-error" role="alert"><?php echo htmlspecialchars($error_msg); ?></p>
-    <?php endif; ?>
-
-    <!-- Category Form (Add or Edit) -->
-    <div class="form-card">
-        <h3><?php echo $is_edit_mode ? 'Edit Category' : 'Add New Category'; ?></h3>
-        
-        <form action="<?php echo BASE_URL . ($is_edit_mode ? '/actions/update_category_action.php' : '/actions/add_category_action.php'); ?>" method="POST">
-            <?php if ($is_edit_mode): ?>
-                <input type="hidden" name="cat_id" value="<?php echo htmlspecialchars($edit_cat_id); ?>">
-            <?php endif; ?>
-
-            <div class="form-group">
-                <label for="cat_name">Category Name</label>
-                <input 
-                    type="text" 
-                    id="cat_name" 
-                    name="cat_name" 
-                    value="<?php echo htmlspecialchars($edit_cat_name); ?>" 
-                    required 
-                    placeholder="Enter category name"
-                >
+    <?php if ($editCat): ?>
+        <!-- Edit form (Task 8). -->
+        <form action="<?php echo app_url('actions/update_category_action.php'); ?>" method="POST">
+            <?php echo csrf_field(); ?>
+            <input type="hidden" name="cat_id" value="<?php echo (int) $editCat['cat_id']; ?>">
+            <div class="form-row">
+                <label for="cat_name">Category name</label>
+                <input type="text" id="cat_name" name="cat_name" maxlength="100" required
+                       value="<?php echo htmlspecialchars($editCat['cat_name']); ?>">
             </div>
-
-            <div>
-                <button type="submit"><?php echo $is_edit_mode ? 'Update Category' : 'Add Category'; ?></button>
-                <?php if ($is_edit_mode): ?>
-                    <a href="<?php echo BASE_URL; ?>/views/admin/category.php" class="btn btn-secondary">Cancel</a>
-                <?php endif; ?>
-            </div>
+            <button type="submit" class="btn">Update Category</button>
+            <p class="form-foot">
+                <a href="<?php echo app_url('views/admin/category.php'); ?>">Cancel</a>
+            </p>
         </form>
-    </div>
+    <?php else: ?>
+        <!-- Add form (Task 7). -->
+        <form action="<?php echo app_url('actions/add_category_action.php'); ?>" method="POST">
+            <?php echo csrf_field(); ?>
+            <div class="form-row">
+                <label for="cat_name">Category name</label>
+                <input type="text" id="cat_name" name="cat_name" maxlength="100" required
+                       placeholder="e.g. Phones">
+            </div>
+            <button type="submit" class="btn">Add Category</button>
+        </form>
+    <?php endif; ?>
+</div>
 
-    <!-- Categories List Table -->
-    <div class="brands-list-container">
-        <h3>Existing Categories</h3>
-        <?php if (!empty($categories)): ?>
-            <table class="admin-table">
-                <thead>
+<div class="card wide">
+    <h2>All Categories</h2>
+    <?php if ($categories): ?>
+        <table class="table">
+            <thead>
+                <tr><th>ID</th><th>Name</th><th>Action</th></tr>
+            </thead>
+            <tbody>
+                <?php foreach ($categories as $c): ?>
                     <tr>
-                        <th>ID</th>
-                        <th>Category Name</th>
-                        <th style="text-align: center;">Actions</th>
+                        <td><?php echo (int) $c['cat_id']; ?></td>
+                        <td><?php echo htmlspecialchars($c['cat_name']); ?></td>
+                        <td>
+                            <a class="btn-sm"
+                               href="<?php echo app_url('views/admin/category.php?edit_id=' . (int) $c['cat_id']); ?>">Edit</a>
+                        </td>
                     </tr>
-                </thead>
-                <tbody>
-                    <?php foreach ($categories as $c): ?>
-                        <tr>
-                            <td><?php echo htmlspecialchars($c['cat_id']); ?></td>
-                            <td><?php echo htmlspecialchars($c['cat_name']); ?></td>
-                            <td style="text-align: center;">
-                                <a href="<?php echo BASE_URL; ?>/views/admin/category.php?edit_id=<?php echo htmlspecialchars($c['cat_id']); ?>" class="action-edit-btn">Edit</a>
-                            </td>
-                        </tr>
-                    <?php endforeach; ?>
-                </tbody>
-            </table>
-        <?php else: ?>
-            <p>No categories found in the database.</p>
-        <?php endif; ?>
-    </div>
-</section>
-
-<?php require_once __DIR__ . "/../layout/footer.php"; ?>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
+    <?php else: ?>
+        <p class="muted">No categories yet. Add your first one above.</p>
+    <?php endif; ?>
+</div>
+<?php require_once __DIR__ . '/../layout/footer.php'; ?>

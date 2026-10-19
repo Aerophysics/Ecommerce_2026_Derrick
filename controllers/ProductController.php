@@ -1,168 +1,163 @@
 <?php
-
-require_once __DIR__ . "/../classes/ProductClass.php";
-
 /**
- * ProductController bridges action files and views with the ProductClass model.
- * Contains no HTML, direct SQL, or redirects.
+ * ProductController.php — middleman between actions/views and the Product model.
+ *
+ * MVC note: instantiates the Model and returns plain data. No SQL, no HTML,
+ * no $_POST/$_SESSION reads — the Action does that and passes values in.
+ *
+ * Read methods return arrays/rows so a View (the sidebar, the admin tables)
+ * can loop them directly. Write methods return a structured
+ * ['success' => bool, 'error' => string] so an Action can flash a message.
  */
+
+require_once __DIR__ . '/../classes/ProductClass.php';
+
 class ProductController
 {
     private $product;
 
     public function __construct()
     {
-        $this->product = new ProductClass();
+        $this->product = new Product();
     }
 
-    /**
-     * Expose model method to add a brand.
-     *
-     * @param string $name
-     * @return bool
-     */
-    public function addBrand($name)
-    {
-        return $this->product->addBrand($name);
-    }
+    // ── Brands (Tasks 5 & 6) ─────────────────────────────────
 
-    /**
-     * Expose model method to get all brands.
-     *
-     * @return array
-     */
     public function getAllBrands()
     {
         return $this->product->getAllBrands();
     }
 
-    /**
-     * Expose model method to get a single brand by ID.
-     *
-     * @param int $id
-     * @return array|false
-     */
     public function getBrandById($id)
     {
         return $this->product->getBrandById($id);
     }
 
-    /**
-     * Expose model method to update a brand.
-     *
-     * @param int $id
-     * @param string $name
-     * @return bool
-     */
+    /** Task 5 — create a brand, refusing a duplicate name. */
+    public function addBrand($name)
+    {
+        if ($this->product->brandNameExists($name)) {
+            return ['success' => false, 'error' => 'That brand already exists.'];
+        }
+        return $this->product->addBrand($name)
+            ? ['success' => true]
+            : ['success' => false, 'error' => 'Could not add brand.'];
+    }
+
+    /** Task 6 — rename a brand, refusing an unknown id or a duplicate name. */
     public function updateBrand($id, $name)
     {
-        return $this->product->updateBrand($id, $name);
+        if (!$this->product->getBrandById($id)) {
+            return ['success' => false, 'error' => 'Brand not found.'];
+        }
+        if ($this->product->brandNameExists($name, $id)) {
+            return ['success' => false, 'error' => 'Another brand already uses that name.'];
+        }
+        return $this->product->updateBrand($id, $name)
+            ? ['success' => true]
+            : ['success' => false, 'error' => 'Could not update brand.'];
     }
 
-    // ============================================================
-    // Category Methods (Task 7 & Task 8)
-    // ============================================================
+    // ── Categories (Tasks 7 & 8) ─────────────────────────────
 
-    /**
-     * Expose model method to add a category.
-     *
-     * @param string $name
-     * @return bool
-     */
-    public function addCategory($name)
-    {
-        return $this->product->addCategory($name);
-    }
-
-    /**
-     * Expose model method to get all categories.
-     *
-     * @return array
-     */
     public function getAllCategories()
     {
         return $this->product->getAllCategories();
     }
 
-    /**
-     * Expose model method to get a single category by ID.
-     *
-     * @param int $id
-     * @return array|false
-     */
     public function getCategoryById($id)
     {
         return $this->product->getCategoryById($id);
     }
 
-    /**
-     * Expose model method to update a category.
-     *
-     * @param int $id
-     * @param string $name
-     * @return bool
-     */
-    public function updateCategory($id, $name)
+    /** Task 7 — create a category, refusing a duplicate name. */
+    public function addCategory($name)
     {
-        return $this->product->updateCategory($id, $name);
+        if ($this->product->categoryNameExists($name)) {
+            return ['success' => false, 'error' => 'That category already exists.'];
+        }
+        return $this->product->addCategory($name)
+            ? ['success' => true]
+            : ['success' => false, 'error' => 'Could not add category.'];
     }
 
-    // ============================================================
-    // Product Customer-Facing Methods (Task 10)
-    // ============================================================
+    /** Task 8 — rename a category, refusing an unknown id or a duplicate name. */
+    public function updateCategory($id, $name)
+    {
+        if (!$this->product->getCategoryById($id)) {
+            return ['success' => false, 'error' => 'Category not found.'];
+        }
+        if ($this->product->categoryNameExists($name, $id)) {
+            return ['success' => false, 'error' => 'Another category already uses that name.'];
+        }
+        return $this->product->updateCategory($id, $name)
+            ? ['success' => true]
+            : ['success' => false, 'error' => 'Could not update category.'];
+    }
 
-    /**
-     * Expose model method to get featured products.
-     *
-     * @param int $limit Max number of products to return (default 6)
-     * @return array
-     */
+    // ── Products (Tasks 9 & 10) ─────────────────────
+
+    public function getProductById($id)
+    {
+        return $this->product->getProductById($id);
+    }
+
+    public function getAllProducts()
+    {
+        return $this->product->getAllProducts();
+    }
+
     public function getFeaturedProducts($limit = 6)
     {
         return $this->product->getFeaturedProducts($limit);
     }
 
-    /**
-     * Expose model method to get products by category.
-     *
-     * @param int $cat_id
-     * @return array
-     */
-    public function getProductsByCategory($cat_id)
+    public function getProductsByCategory($catId)
     {
-        return $this->product->getProductsByCategory($cat_id);
+        return $this->product->getProductsByCategory($catId);
     }
 
-    /**
-     * Expose model method to get products by brand.
-     *
-     * @param int $brand_id
-     * @return array
-     */
-    public function getProductsByBrand($brand_id)
+    public function getProductsByBrand($brandId)
     {
-        return $this->product->getProductsByBrand($brand_id);
+        return $this->product->getProductsByBrand($brandId);
     }
 
-    /**
-     * Expose model method to search products by keyword.
-     *
-     * @param string $query
-     * @return array
-     */
     public function searchProducts($query)
     {
         return $this->product->searchProducts($query);
     }
 
     /**
-     * Expose model method to get a single product by ID.
-     *
-     * @param int $id
-     * @return array|false
+     * Task 9 — create a product. The Action has already moved the uploaded
+     * file and passes only its filename; the Controller checks that the
+     * foreign keys actually exist, because the DB would otherwise reject the
+     * INSERT with a raw constraint error the user cannot act on.
      */
-    public function getProductById($id)
+    public function addProduct($cat, $brand, $title, $price, $desc, $image, $keywords)
     {
-        return $this->product->getProductById($id);
+        if (!$this->product->getCategoryById($cat)) {
+            return ['success' => false, 'error' => 'Please choose a valid category.'];
+        }
+        if (!$this->product->getBrandById($brand)) {
+            return ['success' => false, 'error' => 'Please choose a valid brand.'];
+        }
+        $ok = $this->product->addProduct($cat, $brand, $title, $price, $desc, $image, $keywords);
+        return $ok ? ['success' => true] : ['success' => false, 'error' => 'Could not add product.'];
+    }
+
+    /** Task 9 — update a product, with the same foreign-key checks. */
+    public function updateProduct($id, $cat, $brand, $title, $price, $desc, $image, $keywords)
+    {
+        if (!$this->product->getProductById($id)) {
+            return ['success' => false, 'error' => 'Product not found.'];
+        }
+        if (!$this->product->getCategoryById($cat)) {
+            return ['success' => false, 'error' => 'Please choose a valid category.'];
+        }
+        if (!$this->product->getBrandById($brand)) {
+            return ['success' => false, 'error' => 'Please choose a valid brand.'];
+        }
+        $ok = $this->product->updateProduct($id, $cat, $brand, $title, $price, $desc, $image, $keywords);
+        return $ok ? ['success' => true] : ['success' => false, 'error' => 'Could not update product.'];
     }
 }

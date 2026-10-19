@@ -1,111 +1,88 @@
 <?php
-// Guard admin access before any HTML or output
-require_once __DIR__ . "/../../core/core.php";
-require_admin();
+/**
+ * brand.php — admin: add / edit brands (View). Tasks 5 & 6.
+ *
+ * MVC note: a View asks the Controller for data and renders it. It never
+ * runs SQL and never performs the INSERT/UPDATE — the forms POST to
+ * actions/add_brand_action.php and actions/update_brand_action.php.
+ *
+ * Security: require_admin() runs before ANY output, so a customer or a
+ * guest is redirected away rather than shown a half-rendered admin page.
+ */
 
-require_once __DIR__ . "/../../controllers/ProductController.php";
+require_once __DIR__ . '/../../core/core.php';
+require_admin();
+require_once __DIR__ . '/../../controllers/ProductController.php';
 
 $controller = new ProductController();
 
-// Edit Mode Check
-$is_edit_mode = false;
-$edit_brand_id = null;
-$edit_brand_name = '';
+// Task 6 — edit mode whenever a valid ?edit_id=N names a real brand.
+$editId    = filter_input(INPUT_GET, 'edit_id', FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+$editBrand = $editId ? $controller->getBrandById($editId) : false;
 
-if (isset($_GET['edit_id'])) {
-    $edit_id = filter_var($_GET['edit_id'], FILTER_VALIDATE_INT);
-    if ($edit_id && $edit_id > 0) {
-        $brand_data = $controller->getBrandById($edit_id);
-        if ($brand_data) {
-            $is_edit_mode = true;
-            $edit_brand_id = $brand_data['brand_id'];
-            $edit_brand_name = $brand_data['brand_name'];
-        } else {
-            $_SESSION['error'] = 'Brand not found.';
-        }
-    }
-}
-
-// Session Notifications
-$success_msg = $_SESSION['success'] ?? '';
-$error_msg   = $_SESSION['error'] ?? '';
-unset($_SESSION['success'], $_SESSION['error']);
-
-// Fetch All Brands
+// Task 5 — the full list shown below the form.
 $brands = $controller->getAllBrands();
 
-require_once __DIR__ . "/../layout/header.php";
+$page_title = 'Admin — Brands';
+require_once __DIR__ . '/../layout/header.php';
 ?>
+<div class="card wide">
+    <h1><?php echo $editBrand ? 'Edit Brand' : 'Manage Brands'; ?></h1>
+    <p class="sub">Brands group products by maker.</p>
 
-<section class="admin-brand-section">
-    <h2>Product Brands Management</h2>
+    <?php require __DIR__ . '/../layout/flash.php'; ?>
 
-    <?php if (!empty($success_msg)): ?>
-        <p class="alert alert-success" role="alert"><?php echo htmlspecialchars($success_msg); ?></p>
-    <?php endif; ?>
-
-    <?php if (!empty($error_msg)): ?>
-        <p class="alert alert-error" role="alert"><?php echo htmlspecialchars($error_msg); ?></p>
-    <?php endif; ?>
-
-    <!-- Brand Form (Add or Edit) -->
-    <div class="brand-form-card">
-        <h3><?php echo $is_edit_mode ? 'Edit Brand' : 'Add New Brand'; ?></h3>
-        
-        <form action="<?php echo BASE_URL . ($is_edit_mode ? '/actions/update_brand_action.php' : '/actions/add_brand_action.php'); ?>" method="POST">
-            <?php if ($is_edit_mode): ?>
-                <input type="hidden" name="brand_id" value="<?php echo htmlspecialchars($edit_brand_id); ?>">
-            <?php endif; ?>
-
-            <div class="form-group">
-                <label for="brand_name">Brand Name</label>
-                <input 
-                    type="text" 
-                    id="brand_name" 
-                    name="brand_name" 
-                    value="<?php echo htmlspecialchars($edit_brand_name); ?>" 
-                    required 
-                    placeholder="Enter brand name"
-                >
+    <?php if ($editBrand): ?>
+        <!-- Edit form (Task 6): same page, different action + hidden id. -->
+        <form action="<?php echo app_url('actions/update_brand_action.php'); ?>" method="POST">
+            <?php echo csrf_field(); ?>
+            <input type="hidden" name="brand_id" value="<?php echo (int) $editBrand['brand_id']; ?>">
+            <div class="form-row">
+                <label for="brand_name">Brand name</label>
+                <input type="text" id="brand_name" name="brand_name" maxlength="100" required
+                       value="<?php echo htmlspecialchars($editBrand['brand_name']); ?>">
             </div>
-
-            <div>
-                <button type="submit"><?php echo $is_edit_mode ? 'Update Brand' : 'Add Brand'; ?></button>
-                <?php if ($is_edit_mode): ?>
-                    <a href="<?php echo BASE_URL; ?>/views/admin/brand.php" class="btn btn-secondary">Cancel</a>
-                <?php endif; ?>
-            </div>
+            <button type="submit" class="btn">Update Brand</button>
+            <p class="form-foot">
+                <a href="<?php echo app_url('views/admin/brand.php'); ?>">Cancel</a>
+            </p>
         </form>
-    </div>
+    <?php else: ?>
+        <!-- Add form (Task 5). -->
+        <form action="<?php echo app_url('actions/add_brand_action.php'); ?>" method="POST">
+            <?php echo csrf_field(); ?>
+            <div class="form-row">
+                <label for="brand_name">Brand name</label>
+                <input type="text" id="brand_name" name="brand_name" maxlength="100" required
+                       placeholder="e.g. Samsung">
+            </div>
+            <button type="submit" class="btn">Add Brand</button>
+        </form>
+    <?php endif; ?>
+</div>
 
-    <!-- Brands List Table -->
-    <div class="brands-list-container">
-        <h3>Existing Brands</h3>
-        <?php if (!empty($brands)): ?>
-            <table class="admin-table">
-                <thead>
+<div class="card wide">
+    <h2>All Brands</h2>
+    <?php if ($brands): ?>
+        <table class="table">
+            <thead>
+                <tr><th>ID</th><th>Name</th><th>Action</th></tr>
+            </thead>
+            <tbody>
+                <?php foreach ($brands as $b): ?>
                     <tr>
-                        <th>ID</th>
-                        <th>Brand Name</th>
-                        <th style="text-align: center;">Actions</th>
+                        <td><?php echo (int) $b['brand_id']; ?></td>
+                        <td><?php echo htmlspecialchars($b['brand_name']); ?></td>
+                        <td>
+                            <a class="btn-sm"
+                               href="<?php echo app_url('views/admin/brand.php?edit_id=' . (int) $b['brand_id']); ?>">Edit</a>
+                        </td>
                     </tr>
-                </thead>
-                <tbody>
-                    <?php foreach ($brands as $b): ?>
-                        <tr>
-                            <td><?php echo htmlspecialchars($b['brand_id']); ?></td>
-                            <td><?php echo htmlspecialchars($b['brand_name']); ?></td>
-                            <td style="text-align: center;">
-                                <a href="<?php echo BASE_URL; ?>/views/admin/brand.php?edit_id=<?php echo htmlspecialchars($b['brand_id']); ?>" class="action-edit-btn">Edit</a>
-                            </td>
-                        </tr>
-                    <?php endforeach; ?>
-                </tbody>
-            </table>
-        <?php else: ?>
-            <p>No brands found in the database.</p>
-        <?php endif; ?>
-    </div>
-</section>
-
-<?php require_once __DIR__ . "/../layout/footer.php"; ?>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
+    <?php else: ?>
+        <p class="muted">No brands yet. Add your first one above.</p>
+    <?php endif; ?>
+</div>
+<?php require_once __DIR__ . '/../layout/footer.php'; ?>

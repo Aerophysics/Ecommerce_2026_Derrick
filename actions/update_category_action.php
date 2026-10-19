@@ -1,34 +1,41 @@
 <?php
+/**
+ * update_category_action.php — Task 8: rename a category (admin only).
+ *
+ * Mirrors update_brand_action.php (Task 6).
+ */
 
-require_once __DIR__ . "/../core/core.php";
+require_once __DIR__ . '/../core/core.php';
 require_admin();
+require_once __DIR__ . '/../controllers/ProductController.php';
 
-require_once __DIR__ . "/../controllers/ProductController.php";
+$back = app_url('views/admin/category.php');
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $cat_id   = filter_var($_POST['cat_id'] ?? null, FILTER_VALIDATE_INT);
-    $cat_name = trim($_POST['cat_name'] ?? '');
-
-    if (!$cat_id || $cat_id <= 0) {
-        $_SESSION['error'] = 'Invalid category ID.';
-        redirect(BASE_URL . '/views/admin/category.php');
-    }
-
-    if (empty($cat_name)) {
-        $_SESSION['error'] = 'Category name cannot be empty.';
-        redirect(BASE_URL . '/views/admin/category.php?edit_id=' . $cat_id);
-    }
-
-    $controller = new ProductController();
-    $result = $controller->updateCategory($cat_id, $cat_name);
-
-    if ($result) {
-        $_SESSION['success'] = 'Category updated successfully.';
-    } else {
-        $_SESSION['error'] = 'Failed to update category. Please try again.';
-    }
-
-    redirect(BASE_URL . '/views/admin/category.php');
-} else {
-    redirect(BASE_URL . '/views/admin/category.php');
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    redirect($back);
 }
+if (!verify_csrf()) {
+    redirect($back);
+}
+
+$id   = filter_input(INPUT_POST, 'cat_id', FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+$name = trim(strip_tags($_POST['cat_name'] ?? ''));
+
+if (!$id) {
+    $_SESSION['error'] = 'Invalid category.';
+    redirect($back);
+}
+if ($name === '' || mb_strlen($name) > 100) {
+    $_SESSION['error'] = 'Category name is required (max 100 characters).';
+    redirect($back . '?edit_id=' . $id);
+}
+
+$result = (new ProductController())->updateCategory($id, $name);
+
+if (!empty($result['success'])) {
+    $_SESSION['success'] = 'Category updated.';
+    redirect($back);
+}
+
+$_SESSION['error'] = $result['error'];
+redirect($back . '?edit_id=' . $id);

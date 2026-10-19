@@ -1,134 +1,330 @@
 <?php
+/**
+ * core.php — included at the top of (almost) every page.
+ *
+ * Responsibilities:
+ *   • start output buffering so header() redirects work even after output
+ *   • start the session
+ *   • set the timezone
+ *   • require the database base class
+ *   • define shared helper functions: get_ip(), redirect(), is_logged_in(),
+ *     is_admin(), require_login(), require_admin()
+ *
+ * MVC note: these are shared *utilities*, not business logic. No SQL, no
+ * HTML output lives here.
+ */
 
-// ============================================================
-// core.php
-// ------------------------------------------------------------
-// Included at the top of (almost) every page in the app via
-//   require_once __DIR__ . "/../core/core.php";
-// It is the single place for things that must happen on EVERY
-// request: buffering, the session, timezone, the DB base class,
-// and the small shared helper functions the whole site relies on.
-// It contains NO business logic and NO SQL - that lives in the
-// model classes (classes/*.php).
-// ============================================================
-
-// Start output buffering. header('Location: ...') redirects fail if
-// any output (even a stray space before <?php) was already sent to the
-// browser. Buffering lets action files redirect safely at any point.
+// Redirects (header('Location: ...')) fail if any output was already sent.
+// Buffering lets a page redirect safely even after it has printed something.
 if (!ob_get_level()) {
     ob_start();
 }
 
-// session_start() must run before $_SESSION can be read or written
-// anywhere else in the app. Guard it so it is never started twice.
+// Harden the session cookie before starting the session.
 if (session_status() === PHP_SESSION_NONE) {
+    session_set_cookie_params([
+        'httponly' => true,   // JS can't read the cookie (XSS defence)
+        'samesite' => 'Lax',  // basic CSRF hardening
+        // 'secure' => true,  // enable once the site is served over HTTPS
+    ]);
     session_start();
 }
 
-// Make date/time functions consistent regardless of server locale.
-date_default_timezone_set('UTC');
+date_default_timezone_set('Africa/Accra');
 
-// ------------------------------------------------------------
-// BASE_URL - the URL path the app is served from, detected at runtime.
-// ------------------------------------------------------------
-// The app must work no matter where it is mounted:
-//   - Local XAMPP:  http://localhost/shoppn/...            -> "/shoppn"
-//   - Remote host:  http://host/~user/e-commerce-labs/shoppn/... -> "/~user/e-commerce-labs/shoppn"
-// Hard-coding "/shoppn" broke the remote deploy (every link 404'd because
-// the real prefix is longer). Instead we work out the prefix from the
-// running script: take its filesystem path relative to the app root, then
-// strip that same tail off the URL the browser used to reach it.
-if (!defined('BASE_URL')) {
-    $__app_root   = realpath(dirname(__DIR__));                 // .../shoppn on disk
-    $__script     = realpath($_SERVER['SCRIPT_FILENAME'] ?? '');// running script on disk
-    $__script_url = $_SERVER['SCRIPT_NAME'] ?? '';              // its URL path
+// Security response headers (sent before any body output; safe under ob_start).
+// script-src 'self' blocks inline/injected <script>, the main XSS lever; inline
+// style attributes are allowed (low risk) so existing markup keeps working.
+if (!headers_sent()) {
+    header('X-Content-Type-Options: nosniff');
+    header('X-Frame-Options: DENY');
+    header('Referrer-Policy: same-origin');
+    header("Content-Security-Policy: default-src 'self'; img-src 'self' data:; "
+         . "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+         . "font-src 'self' https://fonts.gstatic.com; script-src 'self'; form-action 'self'; "
+         . "base-uri 'self'; frame-ancestors 'none'");
+}
 
-    $__base = '';
-    if ($__app_root && $__script && strpos($__script, $__app_root) === 0) {
-        // Script path relative to app root, e.g. "/views/register.php".
-        $__rel = str_replace('\\', '/', substr($__script, strlen($__app_root)));
-        if ($__rel !== '' && substr($__script_url, -strlen($__rel)) === $__rel) {
-            $__base = substr($__script_url, 0, -strlen($__rel));
-        } else {
-            $__base = rtrim(dirname($__script_url), '/\\');
+require_once __DIR__ . '/db_class.php';
+
+/**
+ * Append a timestamped line to error/error.log (the project's own logger).
+ * Falls back to PHP's error_log() if the file can't be written.
+ */
+function log_error($message)
+{
+    $line = '[' . date('Y-m-d H:i:s') . '] ' . $message . PHP_EOL;
+    $file = __DIR__ . '/../error/error.log';
+    if (@file_put_contents($file, $line, FILE_APPEND | LOCK_EX) === false) {
+        error_log($message);
+    }
+}
+
+/**
+ * Best-effort client IP address. Cart rows are keyed by IP so guests can
+ * shop without an account (see Task 11).
+ */
+function get_ip()
+{
+    if (!empty($_SERVER['HTTP_CLIENT_IP'])) {
+        return $_SERVER['HTTP_CLIENT_IP'];
+    }
+    if (!empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
+        // May be a comma-separated list; take the first (original client).
+        return trim(explode(',', $_SERVER['HTTP_X_FORWARDED_FOR'])[0]);
+    }
+    return $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
+}
+
+/**
+ * Redirect to $url and stop the script. Always exit after a redirect so
+ * no further code runs. CR/LF are stripped defensively against header
+ * injection (PHP blocks it too, but belt-and-suspenders).
+ */
+function redirect($url)
+{
+    $url = str_replace(["\r", "\n", "\0"], '', (string) $url);
+    header('Location: ' . $url);
+    exit;
+}
+
+/**
+ * Is $url a safe same-site path? Used to vet the "redirect back after login"
+ * target so an attacker can't craft a link that bounces the user off-site
+ * (open redirect). Must be a rooted path ("/…"), not protocol-relative
+ * ("//evil"), not absolute ("http://…"), no backslashes.
+ */
+function is_safe_local_url($url)
+{
+    return is_string($url) && $url !== ''
+        && $url[0] === '/'
+        && strncmp($url, '//', 2) !== 0
+        && strpos($url, '\\') === false
+        && strpos($url, "\r") === false
+        && strpos($url, "\n") === false;
+}
+
+// ── Display helpers ────────────────────────
+/**
+ * Format a price for display. The shop prices in Ghana cedis, matching the
+ * currency the payment step charges in (Task 13).
+ */
+function money($amount)
+{
+    // The cedi sign is written literally rather than as \u{20B5}: that escape
+    // is only interpreted inside DOUBLE-quoted PHP strings, so in single
+    // quotes it would print the seven characters \u{20B5} on every price.
+    return 'GH₵ ' . number_format((float) $amount, 2);
+}
+
+/**
+ * URL for a product image, falling back to a shared placeholder when the
+ * row has no image. Views call this instead of building the path themselves.
+ *
+ * The placeholder lives in images/ rather than images/products/ because that
+ * folder holds uploads and is git-ignored — a shipped asset belongs in git.
+ */
+function product_image_url($filename)
+{
+    $filename = trim((string) $filename);
+    if ($filename === '') {
+        return app_url('images/placeholder.svg');
+    }
+    // Only ever a bare filename — strip any path a bad row might carry.
+    return app_url('images/products/' . rawurlencode(basename($filename)));
+}
+
+// ── Image uploads ────────────────────────────
+/** Image MIME types we accept, mapped to the extension we will save as. */
+const UPLOAD_IMAGE_TYPES = [
+    'image/jpeg' => 'jpg',
+    'image/png'  => 'png',
+    'image/gif'  => 'gif',
+    'image/webp' => 'webp',
+];
+const UPLOAD_IMAGE_MAX = 2097152; // 2 MB
+
+/**
+ * Check one uploaded image WITHOUT storing it.
+ *
+ * Validation is separate from storage on purpose. If the file were moved
+ * into place first and some *other* field then failed validation, the
+ * rejected submission would still have left an orphan image on disk — which
+ * is exactly what happened before this split: a product rejected for a bad
+ * price had already written its picture to images/products/.
+ *
+ * Two deliberate choices:
+ *   • The type is read with finfo from the file's own bytes, NOT from
+ *     $_FILES[...]['type'], which the browser supplies and can simply lie
+ *     about.
+ *   • The caller saves under an extension derived from that detected type,
+ *     never from the user's filename, so "evil.php" cannot be smuggled
+ *     through by renaming a real image.
+ *
+ * @param  array|null $file one entry from $_FILES
+ * @return array ['ok' => bool, 'present' => bool, 'mime' => string|null, 'error' => string|null]
+ */
+function validate_uploaded_image($file)
+{
+    $none = ['ok' => true, 'present' => false, 'mime' => null, 'error' => null];
+    $fail = function ($msg) {
+        return ['ok' => false, 'present' => true, 'mime' => null, 'error' => $msg];
+    };
+
+    if (!is_array($file) || ($file['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) {
+        return $none;
+    }
+    if ($file['error'] !== UPLOAD_ERR_OK) {
+        return $fail('Image upload failed. Please try another file.');
+    }
+    // Guards against a forged $_FILES entry pointing at an arbitrary path.
+    if (!is_uploaded_file($file['tmp_name'])) {
+        return $fail('Invalid upload.');
+    }
+    if ($file['size'] > UPLOAD_IMAGE_MAX) {
+        return $fail('Image must be 2 MB or smaller.');
+    }
+
+    $finfo = finfo_open(FILEINFO_MIME_TYPE);
+    $mime  = finfo_file($finfo, $file['tmp_name']);
+    finfo_close($finfo);
+
+    if (!isset(UPLOAD_IMAGE_TYPES[$mime])) {
+        return $fail('Image must be JPG, PNG, GIF or WEBP.');
+    }
+    return ['ok' => true, 'present' => true, 'mime' => $mime, 'error' => null];
+}
+
+/**
+ * Move an already-validated upload into place. Call only once every other
+ * field has passed, so a rejected submission never leaves a file behind.
+ *
+ * @return string|null the stored filename, or null if the move failed
+ */
+function store_uploaded_image($file, $destDir, $prefix, $mime)
+{
+    $filename = uniqid($prefix, true) . '.' . UPLOAD_IMAGE_TYPES[$mime];
+    if (!move_uploaded_file($file['tmp_name'], rtrim($destDir, '/') . '/' . $filename)) {
+        log_error('Could not move uploaded image to ' . $destDir);
+        return null;
+    }
+    return $filename;
+}
+
+// ── CSRF protection ──────────────────────────────────────────
+/** Current session CSRF token, created on first use. */
+function csrf_token()
+{
+    if (empty($_SESSION['csrf_token'])) {
+        $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+    }
+    return $_SESSION['csrf_token'];
+}
+
+/** Hidden input carrying the CSRF token — drop into every POST form. */
+function csrf_field()
+{
+    return '<input type="hidden" name="csrf_token" value="'
+         . htmlspecialchars(csrf_token(), ENT_QUOTES) . '">';
+}
+
+/**
+ * Validate the CSRF token on a POST. On failure, sets a flash error and
+ * returns false (the caller redirects). Uses hash_equals (timing-safe).
+ */
+function verify_csrf()
+{
+    $sent = $_POST['csrf_token'] ?? '';
+    if (!is_string($sent) || $sent === ''
+        || empty($_SESSION['csrf_token'])
+        || !hash_equals($_SESSION['csrf_token'], $sent)) {
+        $_SESSION['error'] = 'Security check failed. Please refresh and try again.';
+        return false;
+    }
+    return true;
+}
+
+/**
+ * Regenerate the session id (keeps session data) — call right after a
+ * successful login to defeat session fixation.
+ */
+function regenerate_session()
+{
+    if (session_status() === PHP_SESSION_ACTIVE) {
+        session_regenerate_id(true);
+    }
+}
+
+/** True if a customer is logged in. */
+function is_logged_in()
+{
+    return isset($_SESSION['customer_id']);
+}
+
+/** True if the logged-in user is an admin (user_role === 1). */
+function is_admin()
+{
+    return isset($_SESSION['user_role']) && (int) $_SESSION['user_role'] === 1;
+}
+
+/**
+ * Guard for customer-only pages. Call at the very top, before any output.
+ * Remembers the intended page so login can bounce the user back.
+ */
+function require_login()
+{
+    if (!is_logged_in()) {
+        $_SESSION['error'] = 'Please log in to continue.';
+        $_SESSION['redirect_after_login'] = $_SERVER['REQUEST_URI'] ?? '';
+        redirect(app_url('views/login.php'));
+    }
+}
+
+/**
+ * Guard for admin-only pages. Call at the very top, before any output.
+ */
+function require_admin()
+{
+    if (!is_admin()) {
+        $_SESSION['error'] = 'Admin access required.';
+        redirect(app_url('index.php'));
+    }
+}
+
+/**
+ * Build an absolute-from-app-root URL so links work no matter how deep the
+ * current script sits (views/, views/admin/, actions/, ...).
+ *
+ * Works under a standard document root (XAMPP htdocs → /ecomlab) AND under
+ * Apache mod_userdir on the live server (→ /~andrew.quarcoo/ecomlab), where
+ * the app lives outside DOCUMENT_ROOT. The base is derived by comparing the
+ * running script's filesystem path (SCRIPT_FILENAME) with its URL path
+ * (SCRIPT_NAME): whatever prefix of the URL maps to the app root is the base.
+ */
+function app_url($path = '')
+{
+    static $base = null;
+    if ($base === null) {
+        $base      = '';
+        $appRootFs = str_replace('\\', '/', dirname(__DIR__)); // core/ is one level below app root
+        $scriptFs  = str_replace('\\', '/', $_SERVER['SCRIPT_FILENAME'] ?? '');
+        $scriptUrl = str_replace('\\', '/', $_SERVER['SCRIPT_NAME'] ?? '');
+
+        // Primary: strip the script's path-below-app-root off its URL path.
+        if ($scriptFs !== '' && $scriptUrl !== '' && strpos($scriptFs, $appRootFs) === 0) {
+            $rel = substr($scriptFs, strlen($appRootFs)); // e.g. /views/login.php
+            if ($rel !== '' && substr($scriptUrl, -strlen($rel)) === $rel) {
+                $base = rtrim(substr($scriptUrl, 0, strlen($scriptUrl) - strlen($rel)), '/');
+            }
+        }
+
+        // Fallback: derive from DOCUMENT_ROOT when the app sits under it.
+        if ($base === '') {
+            $docRoot = str_replace('\\', '/', rtrim($_SERVER['DOCUMENT_ROOT'] ?? '', '/'));
+            if ($docRoot !== '' && strpos($appRootFs, $docRoot) === 0) {
+                $base = rtrim(str_replace($docRoot, '', $appRootFs), '/');
+            }
         }
     }
-    // Normalise: never a trailing slash; "" means the site root.
-    define('BASE_URL', rtrim($__base, '/'));
-}
-
-// The database base class every model extends. Loaded once here so any
-// page that includes core.php already has Database available.
-require_once __DIR__ . "/db_class.php";
-
-// ------------------------------------------------------------
-// Shared helper functions
-// ------------------------------------------------------------
-
-// Return the client's IP address. The cart is keyed on IP so guests can
-// shop without an account (see later cart tasks). Checks the common proxy
-// headers first, then falls back to the direct connection address.
-if (!function_exists('get_ip')) {
-    function get_ip()
-    {
-        if (!empty($_SERVER['HTTP_CLIENT_IP'])) {
-            return $_SERVER['HTTP_CLIENT_IP'];
-        }
-        if (!empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
-            // May contain a comma-separated list; the first entry is the client.
-            return trim(explode(',', $_SERVER['HTTP_X_FORWARDED_FOR'])[0]);
-        }
-        return $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
-    }
-}
-
-// Send a Location redirect and stop the script. Every action file ends
-// with one of these instead of echoing HTML.
-if (!function_exists('redirect')) {
-    function redirect($url)
-    {
-        header("Location: " . $url);
-        exit;
-    }
-}
-
-// True if a customer is currently logged in.
-if (!function_exists('is_logged_in')) {
-    function is_logged_in()
-    {
-        return isset($_SESSION['customer_id']);
-    }
-}
-
-// True if the logged-in user is an admin (user_role === 1).
-// Cast to int so a string "1" from the session still matches.
-if (!function_exists('is_admin')) {
-    function is_admin()
-    {
-        return isset($_SESSION['user_role']) && (int) $_SESSION['user_role'] === 1;
-    }
-}
-
-// Guard a page that requires any logged-in user. Call at the very top,
-// before any HTML output. Redirects to the login page if not logged in.
-if (!function_exists('require_login')) {
-    function require_login()
-    {
-        if (!is_logged_in()) {
-            $_SESSION['error'] = 'Please log in to continue.';
-            redirect(BASE_URL . '/views/login.php');
-        }
-    }
-}
-
-// Guard an admin-only page. Redirects home with an error if the current
-// user is not an admin. Call at the very top of every admin view/action.
-if (!function_exists('require_admin')) {
-    function require_admin()
-    {
-        if (!is_admin()) {
-            $_SESSION['error'] = 'Admin access required.';
-            redirect(BASE_URL . '/index.php');
-        }
-    }
+    return $base . '/' . ltrim($path, '/');
 }

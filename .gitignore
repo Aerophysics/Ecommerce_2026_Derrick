@@ -1,11 +1,1 @@
-# OS / editor junk
-.DS_Store
-
-# Live credentials — never commit real secrets.
-# Copy core/db_cred.example.php to core/db_cred.php and fill in real values.
 /core/db_cred.php
-shoppn/core/db_cred.php
-
-# Runtime logs
-/error/error.log
-shoppn/error/error.log

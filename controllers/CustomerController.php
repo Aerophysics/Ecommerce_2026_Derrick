@@ -1,27 +1,28 @@
 <?php
+/**
+ * CustomerController.php — the middleman between actions and the Customer model.
+ *
+ * MVC note: instantiates the Model, calls its methods, returns plain
+ * arrays/booleans. No SQL, no echo, no HTML here.
+ */
 
-// Bring in the Customer model. __DIR__ keeps the include stable.
-require_once __DIR__ . "/../classes/CustomerClass.php";
+require_once __DIR__ . '/../classes/CustomerClass.php';
 
-// CustomerController is the traffic director between the action files and
-// the CustomerClass model. It instantiates the model, calls its methods,
-// and returns structured result arrays. It contains NO SQL, NO HTML,
-// NO echo, and NO redirects.
 class CustomerController
 {
-    // One model instance (and therefore one DB connection) reused across
-    // this controller's methods.
     private $customer;
 
     public function __construct()
     {
-        $this->customer = new CustomerClass();
+        $this->customer = new Customer();
     }
 
-    // Register a new customer. $data is an associative array of already
-    // sanitised fields from the action file. Checks for a duplicate email
-    // first, then inserts. Returns a structured result the action can act
-    // on without knowing anything about the database.
+    /**
+     * Register a new customer.
+     *
+     * @param array $data name,email,pass,country,city,contact,address,image
+     * @return array ['success'=>true] or ['success'=>false,'error'=>'...']
+     */
     public function register($data)
     {
         if ($this->customer->emailExists($data['email'])) {
@@ -34,22 +35,39 @@ class CustomerController
             $data['pass'],
             $data['country'],
             $data['city'],
-            $data['contact']
+            $data['contact'],
+            $data['address'] ?? null,
+            $data['image']   ?? null
         );
 
-        if ($ok) {
-            return ['success' => true];
-        }
-        return ['success' => false, 'error' => 'Registration failed. Please try again.'];
+        return $ok
+            ? ['success' => true]
+            : ['success' => false, 'error' => 'Could not create the account. Please try again.'];
     }
 
-    // Authenticate a login attempt. Returns the customer row on success,
-    // or a structured error array on failure.
+    /**
+     * Fetch a customer's public profile (password hash removed) by email.
+     * @return array|false
+     */
+    public function getProfileByEmail($email)
+    {
+        $row = $this->customer->getCustomerByEmail($email);
+        if ($row) {
+            unset($row['customer_pass']);
+        }
+        return $row;
+    }
+
+    /**
+     * Attempt a login.
+     *
+     * @return array the customer row on success, or ['success'=>false,'error'=>'...']
+     */
     public function login($email, $pass)
     {
         $row = $this->customer->login($email, $pass);
         if ($row) {
-            return ['success' => true, 'customer' => $row];
+            return $row;
         }
         return ['success' => false, 'error' => 'Invalid email or password.'];
     }

@@ -1,6 +1,8 @@
-    </main>
-    <footer>
-        <p>&copy; <?php echo date('Y'); ?> Shoppn - E-commerce Lab. All rights reserved.</p>
-    </footer>
+<?php
+/**
+ * footer.php — closing layout for every view. Pure HTML, no logic.
+ */
+?>
+</main>
 </body>
 </html>

@@ -1,123 +1,93 @@
 <?php
+/**
+ * db_class.php — the database base class every Model extends.
+ *
+ * MVC note: this is Model infrastructure. It knows how to connect to MySQL
+ * and how to run *prepared* statements safely. It never echoes HTML and
+ * never reads $_POST/$_GET/$_SESSION — child model classes (Customer,
+ * Product, Cart) inherit fetchAll()/fetchOne()/execute() and add the SQL.
+ *
+ * Uses PDO (the spec allows "PDO/MySQLi"). PDO gives us one clean prepared
+ * statement helper set and exception-based error handling.
+ */
 
-// Pull in the connection settings (DATABASE, SERVER, USERNAME, PASSWD constants).
-// __DIR__ makes this work no matter which file/folder does the including,
-// because it is always resolved relative to THIS file, not the entry script.
-require_once __DIR__ . "/db_cred.php";
+require_once __DIR__ . '/db_cred.php';
 
-// Database is the base class every "model" class (like Customer) should extend.
-// It knows how to connect to MySQL and how to run queries safely (using
-// prepared statements, which protect against SQL injection). Child classes
-// don't need to know any of this - they just call $this->fetchAll(), etc.
 class Database
 {
-    // $conn holds the PDO connection object. It is private because only
-    // this class needs to touch it directly - child classes use the
-    // helper methods below instead.
-    private $conn;
+    /**
+     * PDO connection. `protected` as the handout specifies, so a child Model
+     * can reach it directly if it ever needs to — though in practice they all
+     * go through fetchAll()/fetchOne()/execute() below.
+     */
+    protected $conn;
 
-    // These properties are set from the constants defined in db_cred.php.
-    // Using properties (instead of the constants directly) makes it easy
-    // to override them later if a subclass ever needs a different database.
-    private $host = SERVER;
-    private $dbname = DATABASE;
-    private $username = USERNAME;
-    private $password = PASSWD;
-
-    // The constructor runs automatically whenever `new Database()` (or
-    // `new Customer()`, since Customer extends Database) is called.
-    // It opens the connection so every child class is ready to query
-    // the database as soon as it is created.
     public function __construct()
     {
         try {
-
-            // PDO is PHP's built-in database access layer. The first
-            // argument is the DSN (Data Source Name) - it tells PDO
-            // which driver, host and database to use.
             $this->conn = new PDO(
-                "mysql:host={$this->host};dbname={$this->dbname};charset=utf8mb4",
-                $this->username,
-                $this->password
+                'mysql:host=' . DB_HOST . ';dbname=' . DB_NAME . ';charset=utf8mb4',
+                DB_USER,
+                DB_PASS,
+                [
+                    // Throw exceptions on error instead of silent failures.
+                    PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
+                    // Rows come back as associative arrays by default.
+                    PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+                    // Use real prepared statements, not emulated ones.
+                    PDO::ATTR_EMULATE_PREPARES   => false,
+                ]
             );
-
-            // Show database errors as exceptions
-            // (instead of PHP warnings, which are easy to miss)
-            $this->conn->setAttribute(
-                PDO::ATTR_ERRMODE,
-                PDO::ERRMODE_EXCEPTION
-            );
-
         } catch (PDOException $e) {
-
-            // If the connection fails (wrong credentials, MySQL not
-            // running, etc.) stop the script and show why.
-            die("Database connection failed: " . $e->getMessage());
-
+            // Log the real reason, show the user something generic.
+            if (function_exists('log_error')) {
+                log_error('DB connection failed: ' . $e->getMessage());
+            } else {
+                error_log('DB connection failed: ' . $e->getMessage());
+            }
+            die('Database connection failed. Please try again later.');
         }
     }
 
-    // Execute SELECT queries that can return many rows.
-    // $sql is the query text with "?" placeholders.
-    // $params is an array of values to safely fill those placeholders.
-    // Example: $this->fetchAll("SELECT * FROM customer WHERE customer_city = ?", ["Lagos"]);
+    /**
+     * Run a SELECT that may return many rows.
+     * @return array list of associative rows (empty array if none)
+     */
     public function fetchAll($sql, $params = [])
     {
-        // Prepare the query (PDO checks its structure before running it)
         $stmt = $this->conn->prepare($sql);
-
-        // Safely bind parameters with appropriate data types (e.g. PARAM_INT for LIMIT)
-        foreach ($params as $key => $val) {
-            $paramIndex = is_int($key) ? $key + 1 : $key;
-            $type = is_int($val) ? PDO::PARAM_INT : PDO::PARAM_STR;
-            $stmt->bindValue($paramIndex, $val, $type);
-        }
-
-        // Run the query
-        $stmt->execute();
-
-        // Return every matching row as an associative array (or empty array if none)
-        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        return is_array($rows) ? $rows : [];
+        $stmt->execute($params);
+        return $stmt->fetchAll();
     }
 
-    // Execute a SELECT query that is only expected to return one row
-    // (e.g. looking up a single customer by id).
+    /**
+     * Run a SELECT expected to return a single row.
+     * @return array|false the row, or false if nothing matched
+     */
     public function fetchOne($sql, $params = [])
     {
         $stmt = $this->conn->prepare($sql);
-
-        foreach ($params as $key => $val) {
-            $paramIndex = is_int($key) ? $key + 1 : $key;
-            $type = is_int($val) ? PDO::PARAM_INT : PDO::PARAM_STR;
-            $stmt->bindValue($paramIndex, $val, $type);
-        }
-
-        $stmt->execute();
-
-        // fetch() (no "All") returns just the first matching row
-        $row = $stmt->fetch(PDO::FETCH_ASSOC);
-        return $row ?: false;
+        $stmt->execute($params);
+        return $stmt->fetch();
     }
 
-    // Execute INSERT, UPDATE and DELETE statements.
-    // Returns true/false depending on whether the statement succeeded.
+    /**
+     * Run an INSERT / UPDATE / DELETE.
+     * @return bool true on success
+     */
     public function execute($sql, $params = [])
     {
         $stmt = $this->conn->prepare($sql);
-
-        foreach ($params as $key => $val) {
-            $paramIndex = is_int($key) ? $key + 1 : $key;
-            $type = is_int($val) ? PDO::PARAM_INT : PDO::PARAM_STR;
-            $stmt->bindValue($paramIndex, $val, $type);
-        }
-
-        return $stmt->execute();
+        return $stmt->execute($params);
     }
 
-    // Get the raw PDO connection if a child class ever needs to do
-    // something this class doesn't already provide a helper for
-    // (e.g. transactions).
+    /** ID generated by the most recent INSERT on this connection. */
+    public function lastInsertId()
+    {
+        return $this->conn->lastInsertId();
+    }
+
+    /** Raw PDO handle, for the rare case a child needs transactions etc. */
     public function getConnection()
     {
         return $this->conn;

@@ -1,38 +1,51 @@
 <?php
+/**
+ * login_action.php — processes the login form.
+ *
+ * MVC note: sanitise → call Controller → set session → redirect. No SQL, no HTML.
+ */
 
-// login_action.php - the server entry point for the login form.
-// POST only. Sanitises input, asks the controller to verify the
-// credentials, sets up the session on success, then REDIRECTS.
-require_once __DIR__ . "/../core/core.php";
-require_once __DIR__ . "/../controllers/CustomerController.php";
+require_once __DIR__ . '/../core/core.php';
+require_once __DIR__ . '/../controllers/CustomerController.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    redirect(BASE_URL . '/views/login.php');
+    redirect(app_url('views/login.php'));
 }
 
-// Sanitise. Password is left intact (spaces may be part of it).
-$email = strip_tags(trim($_POST['customer_email'] ?? ''));
-$pass  = $_POST['customer_pass'] ?? '';
+if (!verify_csrf()) {
+    redirect(app_url('views/login.php'));
+}
 
-if ($email === '' || $pass === '') {
-    $_SESSION['error'] = 'Email and password are required.';
-    redirect(BASE_URL . '/views/login.php');
+$email = trim(strip_tags($_POST['login_email'] ?? ''));
+$pass  = $_POST['login_pass'] ?? '';
+
+if (!filter_var($email, FILTER_VALIDATE_EMAIL) || $pass === '') {
+    $_SESSION['error'] = 'Please enter a valid email and password.';
+    redirect(app_url('views/login.php'));
 }
 
 $controller = new CustomerController();
 $result = $controller->login($email, $pass);
 
-if (!$result['success']) {
-    // Deliberately vague message - don't reveal which field was wrong.
-    $_SESSION['error'] = $result['error'];
-    redirect(BASE_URL . '/views/login.php');
+// A successful login returns the customer row (has customer_id); failure
+// returns ['success' => false, 'error' => ...].
+if (isset($result['customer_id'])) {
+    regenerate_session(); // defeat session fixation on login
+    $_SESSION['customer_id']    = $result['customer_id'];
+    $_SESSION['customer_name']  = $result['customer_name'];
+    $_SESSION['customer_email'] = $result['customer_email'];
+    $_SESSION['user_role']      = $result['user_role'];
+    $_SESSION['success']        = 'Welcome back, ' . $result['customer_name'] . '!';
+
+    // Bounce back to the page they were trying to reach — but only if it's a
+    // safe same-site path (guards against open-redirect abuse).
+    $back = $_SESSION['redirect_after_login'] ?? null;
+    unset($_SESSION['redirect_after_login']);
+    if (is_safe_local_url($back)) {
+        redirect($back);
+    }
+    redirect(app_url('index.php'));
 }
 
-// Success: store identity in the session and go to the home page.
-$c = $result['customer'];
-$_SESSION['customer_id']    = $c['customer_id'];
-$_SESSION['customer_name']  = $c['customer_name'];
-$_SESSION['customer_email'] = $c['customer_email'];
-$_SESSION['user_role']      = $c['user_role'];
-
-redirect(BASE_URL . '/index.php');
+$_SESSION['error'] = $result['error'] ?? 'Invalid email or password.';
+redirect(app_url('views/login.php'));

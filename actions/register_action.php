@@ -1,59 +1,127 @@
 <?php
+/**
+ * register_action.php — processes the registration form.
+ *
+ * MVC note: an Action reads input, validates it server-side, calls the
+ * Controller, sets session, and redirects. No SQL, no HTML output.
+ */
 
-// register_action.php - the server entry point for the registration form.
-// It reads the POST, sanitises and validates every field server-side,
-// asks the controller to register the customer, then REDIRECTS. It never
-// echoes HTML and never touches the database directly.
-require_once __DIR__ . "/../core/core.php";
-require_once __DIR__ . "/../controllers/CustomerController.php";
+require_once __DIR__ . '/../core/core.php';
+require_once __DIR__ . '/../controllers/CustomerController.php';
 
-// This endpoint only handles form submissions.
+// Only ever run on a POST submission.
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    redirect(BASE_URL . '/views/register.php');
+    redirect(app_url('views/register.php'));
 }
 
-// --- Sanitise all inputs server-side ---
-// trim() removes stray whitespace; strip_tags() removes any HTML/script
-// a user might try to inject. Never trust client-side validation alone.
-$name    = strip_tags(trim($_POST['customer_name']    ?? ''));
-$email   = strip_tags(trim($_POST['customer_email']   ?? ''));
-$pass    = $_POST['customer_pass'] ?? '';   // not trimmed/stripped: spaces can be valid in a password
-$country = strip_tags(trim($_POST['customer_country'] ?? ''));
-$city    = strip_tags(trim($_POST['customer_city']    ?? ''));
-$contact = strip_tags(trim($_POST['customer_contact'] ?? ''));
+// Reject forged cross-site submissions.
+if (!verify_csrf()) {
+    redirect(app_url('views/register.php'));
+}
 
-// --- Validate ---
+/** Trim + strip tags on a posted field. */
+function clean($key)
+{
+    return trim(strip_tags($_POST[$key] ?? ''));
+}
+
+$name    = clean('customer_name');
+$email   = clean('customer_email');
+$pass    = $_POST['customer_pass'] ?? '';   // not stripped — password may contain symbols
+$country = clean('customer_country');
+$city    = clean('customer_city');
+$contact = clean('customer_contact');
+$address = clean('customer_address');
+
+// ── Server-side validation (JS validation can always be bypassed) ──
 $errors = [];
 
-// Required fields
-if ($name === '' || $email === '' || $pass === '' || $country === '' || $city === '' || $contact === '') {
-    $errors[] = 'All fields are required.';
+if ($name === '' || mb_strlen($name) > 100) {
+    $errors[] = 'Name is required (max 100 characters).';
+}
+if (!filter_var($email, FILTER_VALIDATE_EMAIL) || mb_strlen($email) > 50) {
+    $errors[] = 'A valid email is required (max 50 characters).';
+}
+// Password strength. The same rule is enforced in js/validate.js for instant
+// feedback, but this server-side check is the one that actually protects the
+// account: JS can always be bypassed. Each requirement is reported separately
+// so the user knows exactly what to fix.
+// Upper bound is 72 bytes because bcrypt silently ignores anything past that
+// — better to reject a too-long password than to store a truncated one.
+$passErrors = [];
+if (strlen($pass) < 8) {
+    $passErrors[] = '8 characters';
+}
+if (!preg_match('/[a-z]/', $pass)) {
+    $passErrors[] = 'a lowercase letter';
+}
+if (!preg_match('/[A-Z]/', $pass)) {
+    $passErrors[] = 'an uppercase letter';
+}
+if (!preg_match('/\d/', $pass)) {
+    $passErrors[] = 'a number';
+}
+if (!preg_match('/[^A-Za-z0-9]/', $pass)) {
+    $passErrors[] = 'a special character';
+}
+if (strlen($pass) > 72) {
+    $errors[] = 'Password must be 72 characters or fewer.';
+} elseif ($passErrors) {
+    $errors[] = 'Password needs at least ' . implode(', ', $passErrors) . '.';
+}
+// Country must be one of the values offered by the form (whitelist).
+$allowedCountries = ['Ghana', 'Nigeria', 'Kenya', 'South Africa', 'United States',
+                     'United Kingdom', 'Canada', 'Germany', 'France', 'India', 'Other'];
+if (!in_array($country, $allowedCountries, true)) {
+    $errors[] = 'Please select a valid country.';
+}
+if ($city === '' || mb_strlen($city) > 30) {
+    $errors[] = 'City is required.';
+}
+if (!preg_match('/^[0-9+\-\s]{7,15}$/', $contact)) {
+    $errors[] = 'Contact must be 7–15 digits (may include + - spaces).';
+}
+if (mb_strlen($address) > 255) {
+    $errors[] = 'Address is too long (max 255 characters).';
 }
 
-// Email must be a real email shape (mirrors the client-side regex)
-if ($email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
-    $errors[] = 'Please enter a valid email address.';
+// ── Optional profile image upload ──
+// Only CHECKED here; it is stored further down, once every other field has
+// passed. Storing first would leave an orphan file whenever some other field
+// is rejected. The rules live in core/core.php so this form and the admin
+// product form enforce exactly the same ones.
+$upload = validate_uploaded_image($_FILES['customer_image'] ?? null);
+if (!$upload['ok']) {
+    $errors[] = $upload['error'];
 }
 
-// Field lengths must fit the DB schema (customer table column sizes)
-if (strlen($email) > 50)   { $errors[] = 'Email must be 50 characters or fewer.'; }
-if (strlen($name) > 100)   { $errors[] = 'Name must be 100 characters or fewer.'; }
-if (strlen($country) > 30) { $errors[] = 'Country must be 30 characters or fewer.'; }
-if (strlen($city) > 30)    { $errors[] = 'City must be 30 characters or fewer.'; }
-if (strlen($contact) > 15) { $errors[] = 'Contact must be 15 characters or fewer.'; }
+// Preserve entered values (except password) so the form can be re-filled.
+$_SESSION['old'] = [
+    'customer_name'    => $name,
+    'customer_email'   => $email,
+    'customer_country' => $country,
+    'customer_city'    => $city,
+    'customer_contact' => $contact,
+    'customer_address' => $address,
+];
 
-// Password policy: at least 8 chars and at least one digit (mirrors JS)
-if ($pass !== '' && !preg_match('/^(?=.*\d).{8,}$/', $pass)) {
-    $errors[] = 'Password must be at least 8 characters and include a number.';
-}
-
-// On any validation failure, stash the message and go back to the form.
-if (!empty($errors)) {
+if ($errors) {
     $_SESSION['error'] = implode(' ', $errors);
-    redirect(BASE_URL . '/views/register.php');
+    redirect(app_url('views/register.php'));
 }
 
-// --- Hand off to the controller (which calls the model) ---
+// Everything validated — now it is safe to put the image on disk.
+$imageName = null;
+if ($upload['present']) {
+    $imageName = store_uploaded_image($_FILES['customer_image'],
+                                      __DIR__ . '/../images/customers', 'cust_', $upload['mime']);
+    if ($imageName === null) {
+        $_SESSION['error'] = 'Could not save the profile image.';
+        redirect(app_url('views/register.php'));
+    }
+}
+
+// ── Hand off to the controller ──
 $controller = new CustomerController();
 $result = $controller->register([
     'name'    => $name,
@@ -62,23 +130,25 @@ $result = $controller->register([
     'country' => $country,
     'city'    => $city,
     'contact' => $contact,
+    'address' => $address,
+    'image'   => $imageName,
 ]);
 
-if (!$result['success']) {
-    $_SESSION['error'] = $result['error'];
-    redirect(BASE_URL . '/views/register.php');
+if (!empty($result['success'])) {
+    unset($_SESSION['old']);
+
+    // Log the new customer straight in.
+    $customer = (new CustomerController())->login($email, $pass);
+    if (isset($customer['customer_id'])) {
+        regenerate_session(); // defeat session fixation on privilege change
+        $_SESSION['customer_id']    = $customer['customer_id'];
+        $_SESSION['customer_name']  = $customer['customer_name'];
+        $_SESSION['customer_email'] = $customer['customer_email'];
+        $_SESSION['user_role']      = $customer['user_role'];
+    }
+    $_SESSION['success'] = 'Welcome to shoppn, ' . $name . '!';
+    redirect(app_url('views/account/my_account.php'));
 }
 
-// Success: log the new customer straight in. We still hold the plaintext
-// password, so we reuse the login flow to fetch the freshly-created row
-// (with its new customer_id and user_role) and populate the session.
-$login = $controller->login($email, $pass);
-if ($login['success']) {
-    $c = $login['customer'];
-    $_SESSION['customer_id']    = $c['customer_id'];
-    $_SESSION['customer_name']  = $c['customer_name'];
-    $_SESSION['customer_email'] = $c['customer_email'];
-    $_SESSION['user_role']      = $c['user_role'];
-}
-
-redirect(BASE_URL . '/views/account/my_account.php');
+$_SESSION['error'] = $result['error'] ?? 'Registration failed.';
+redirect(app_url('views/register.php'));

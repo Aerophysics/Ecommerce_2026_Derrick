@@ -1,82 +1,109 @@
 <?php
-// register.php - the registration form (View layer). Minimal PHP: it only
-// displays a session error message. No SQL, no business logic here.
-require_once __DIR__ . "/../core/core.php";
+/**
+ * register.php — the registration form (View).
+ *
+ * Flow: this form → js/validate.js (client validation) →
+ * actions/register_action.php → CustomerController → Customer model → DB.
+ */
+require_once __DIR__ . '/../core/core.php';
 
-// If already logged in, there's no reason to register again.
+// Already logged in? No need to register.
 if (is_logged_in()) {
-    redirect(BASE_URL . '/index.php');
+    redirect(app_url('views/account/my_account.php'));
 }
 
-// Pull any error set by the action file, then clear it so it shows once.
-$error = $_SESSION['error'] ?? '';
-unset($_SESSION['error']);
+$old = $_SESSION['old'] ?? [];
+unset($_SESSION['old']);
+function old($key, $old) { return htmlspecialchars($old[$key] ?? ''); }
 
-require_once __DIR__ . "/layout/header.php";
+$countries = ['Ghana', 'Nigeria', 'Kenya', 'South Africa', 'United States',
+              'United Kingdom', 'Canada', 'Germany', 'France', 'India', 'Other'];
+
+$page_title = 'Register';
+require_once __DIR__ . '/layout/header.php';
 ?>
+<div class="card wide">
+    <h1>Create your account</h1>
+    <p class="sub">Join shoppn — it only takes a minute.</p>
 
-<section>
-    <h2>Create an account</h2>
+    <?php require __DIR__ . '/layout/flash.php'; ?>
 
-    <?php if ($error !== ''): ?>
-        <p role="alert"><?php echo htmlspecialchars($error); ?></p>
-    <?php endif; ?>
+    <form id="register-form" action="<?php echo app_url('actions/register_action.php'); ?>"
+          method="POST" enctype="multipart/form-data" novalidate>
+        <?php echo csrf_field(); ?>
 
-    <!--
-        The form posts to the action file. Each input's name maps to a
-        customer column; each id is what js/validate.js reads. The empty
-        <span> after each field is where inline JS errors are written.
-        (The customer table has no address column, so there is no address
-        field - only columns that actually exist are collected.)
-    -->
-    <form id="registerForm" action="<?= BASE_URL ?>/actions/register_action.php" method="POST" novalidate>
-        <div>
-            <label for="reg_name">Full Name</label>
-            <input type="text" name="customer_name" id="reg_name" maxlength="100">
-            <span id="err_name"></span>
+        <div class="form-row">
+            <label for="customer_name">Full Name</label>
+            <input type="text" id="customer_name" name="customer_name"
+                   value="<?php echo old('customer_name', $old); ?>" maxlength="100">
+            <div class="field-error" id="error-name"></div>
         </div>
-        <div>
-            <label for="reg_email">Email</label>
-            <input type="text" name="customer_email" id="reg_email" maxlength="50">
-            <span id="err_email"></span>
+
+        <div class="form-row">
+            <label for="customer_email">Email</label>
+            <input type="email" id="customer_email" name="customer_email"
+                   value="<?php echo old('customer_email', $old); ?>" maxlength="50">
+            <div class="field-error" id="error-email"></div>
         </div>
-        <div>
-            <label for="reg_pass">Password</label>
-            <input type="password" name="customer_pass" id="reg_pass">
-            <span id="err_pass"></span>
+
+        <div class="form-row">
+            <label for="customer_pass">Password</label>
+            <input type="password" id="customer_pass" name="customer_pass">
+            <p class="hint">At least 8 characters, including an uppercase letter,
+               a lowercase letter, a number and a special character.</p>
+            <div class="field-error" id="error-pass"></div>
         </div>
-        <div>
-            <label for="reg_country">Country</label>
-            <select name="customer_country" id="reg_country">
-                <option value="">-- Select country --</option>
-                <option value="Ghana">Ghana</option>
-                <option value="Nigeria">Nigeria</option>
-                <option value="Kenya">Kenya</option>
-                <option value="South Africa">South Africa</option>
-                <option value="United States">United States</option>
-                <option value="United Kingdom">United Kingdom</option>
-            </select>
-            <span id="err_country"></span>
+
+        <div class="form-grid">
+            <div class="form-row">
+                <label for="customer_country">Country</label>
+                <select id="customer_country" name="customer_country">
+                    <option value="">Select…</option>
+                    <?php foreach ($countries as $c): ?>
+                        <option value="<?php echo htmlspecialchars($c); ?>"
+                            <?php echo (($old['customer_country'] ?? '') === $c) ? 'selected' : ''; ?>>
+                            <?php echo htmlspecialchars($c); ?>
+                        </option>
+                    <?php endforeach; ?>
+                </select>
+                <div class="field-error" id="error-country"></div>
+            </div>
+
+            <div class="form-row">
+                <label for="customer_city">City</label>
+                <input type="text" id="customer_city" name="customer_city"
+                       value="<?php echo old('customer_city', $old); ?>" maxlength="30">
+                <div class="field-error" id="error-city"></div>
+            </div>
         </div>
-        <div>
-            <label for="reg_city">City</label>
-            <input type="text" name="customer_city" id="reg_city" maxlength="30">
-            <span id="err_city"></span>
+
+        <div class="form-row">
+            <label for="customer_contact">Contact Number</label>
+            <input type="text" id="customer_contact" name="customer_contact"
+                   value="<?php echo old('customer_contact', $old); ?>" maxlength="15"
+                   placeholder="e.g. +233 24 000 0000">
+            <div class="field-error" id="error-contact"></div>
         </div>
-        <div>
-            <label for="reg_contact">Contact Number</label>
-            <input type="text" name="customer_contact" id="reg_contact" maxlength="15">
-            <span id="err_contact"></span>
+
+        <div class="form-row">
+            <label for="customer_address">Address</label>
+            <textarea id="customer_address" name="customer_address" rows="2"
+                      maxlength="255"><?php echo old('customer_address', $old); ?></textarea>
+            <div class="field-error" id="error-address"></div>
         </div>
-        <div>
-            <button type="submit" id="registerBtn">Register</button>
+
+        <div class="form-row">
+            <label for="customer_image">Profile Image <span class="muted">(optional)</span></label>
+            <input type="file" id="customer_image" name="customer_image" accept="image/*">
+            <div class="field-error" id="error-image"></div>
         </div>
+
+        <button type="submit" class="btn" id="register-submit">Create Account</button>
     </form>
 
-    <p>Already have an account? <a href="<?= BASE_URL ?>/views/login.php">Log in</a>.</p>
-</section>
+    <p class="form-foot">Already have an account?
+        <a href="<?php echo app_url('views/login.php'); ?>">Log in</a>.</p>
+</div>
 
-<!-- Client-side validation lives here and runs before the form submits -->
-<script src="<?= BASE_URL ?>/js/validate.js"></script>
-
-<?php require_once __DIR__ . "/layout/footer.php"; ?>
+<script src="<?php echo app_url('js/validate.js'); ?>"></script>
+<?php require_once __DIR__ . '/layout/footer.php'; ?>

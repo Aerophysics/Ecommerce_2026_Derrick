@@ -1,25 +1,24 @@
 <?php
-// logout.php - end the session and return to the home page.
-require_once __DIR__ . "/core/core.php";
+/**
+ * logout.php — securely destroy the session and return home.
+ */
+require_once __DIR__ . '/core/core.php';
 
-// Clear all session variables, then destroy the session itself.
+// Clear all session data.
 $_SESSION = [];
 
-// Remove the session cookie from the browser as well.
+// Delete the session cookie in the browser.
 if (ini_get('session.use_cookies')) {
     $params = session_get_cookie_params();
     setcookie(
-        session_name(),
-        '',
-        time() - 42000,
-        $params['path'],
-        $params['domain'],
-        $params['secure'],
-        $params['httponly']
+        session_name(), '', time() - 42000,
+        $params['path'], $params['domain'], $params['secure'], $params['httponly']
     );
 }
 
+// Destroy the session on the server, then start a fresh one for the flash.
 session_destroy();
+session_start();
+$_SESSION['success'] = 'You have been logged out.';
 
-// Back to the storefront.
-redirect(BASE_URL . '/index.php');
+redirect(app_url('index.php'));
