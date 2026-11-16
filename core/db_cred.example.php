@@ -16,3 +16,9 @@ define('DB_HOST', 'localhost'); // where MySQL is running
 define('DB_USER', 'root');      // MySQL username
 define('DB_PASS', '');          // MySQL password (blank on local XAMPP)
 define('DB_NAME', 'shoppn');    // database name (see database/shoppn.sql)
+
+// Paystack API credentials (Task 13)
+// Replace with your keys from https://dashboard.paystack.com/#/settings/developer
+define('PAYSTACK_PUBLIC_KEY', 'pk_test_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx');
+define('PAYSTACK_SECRET_KEY', 'sk_test_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx');
+

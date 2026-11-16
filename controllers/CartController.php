@@ -86,4 +86,42 @@ class CartController
     {
         return $this->cart->clearCart($ip);
     }
+
+    // ── Payment & Order Methods (Task 13) ────────────────────
+
+    /**
+     * Complete payment, record order and line items, and clear visitor's cart.
+     *
+     * @param int    $customerId
+     * @param string $ip
+     * @param string $reference
+     * @param float  $amount
+     * @return int|false New order ID on success, false on failure
+     */
+    public function processPayment($customerId, $ip, $reference, $amount)
+    {
+        return $this->cart->processPayment($customerId, $ip, $reference, $amount);
+    }
+
+    /**
+     * Retrieve complete order record with line items for invoice display.
+     *
+     * @param int $orderId
+     * @return array|false
+     */
+    public function getOrderById($orderId)
+    {
+        return $this->cart->getOrderById($orderId);
+    }
+
+    /**
+     * Retrieve all orders belonging to a customer.
+     *
+     * @param int $customerId
+     * @return array
+     */
+    public function getCustomerOrders($customerId)
+    {
+        return $this->cart->getCustomerOrders($customerId);
+    }
 }

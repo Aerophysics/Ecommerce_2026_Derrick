@@ -33,15 +33,38 @@ class Customer extends Database
     {
         $hash = password_hash($pass, PASSWORD_BCRYPT);
 
+        $hasAddress = false;
+        try {
+            $hasAddress = $this->fetchOne(
+                "SELECT 1 FROM information_schema.COLUMNS
+                  WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'customer' AND COLUMN_NAME = 'customer_address' LIMIT 1"
+            ) !== false;
+        } catch (Exception $e) {
+            $hasAddress = false;
+        }
+
+        if ($hasAddress) {
+            $sql = 'INSERT INTO customer
+                        (customer_name, customer_email, customer_pass,
+                         customer_country, customer_city, customer_contact,
+                         customer_address, customer_image, user_role)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 2)';
+
+            return $this->execute(
+                $sql,
+                [$name, $email, $hash, $country, $city, $contact, $address, $image]
+            );
+        }
+
         $sql = 'INSERT INTO customer
                     (customer_name, customer_email, customer_pass,
                      customer_country, customer_city, customer_contact,
-                     customer_address, customer_image, user_role)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 2)';
+                     customer_image, user_role)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 2)';
 
         return $this->execute(
             $sql,
-            [$name, $email, $hash, $country, $city, $contact, $address, $image]
+            [$name, $email, $hash, $country, $city, $contact, $image]
         );
     }
 

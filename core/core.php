@@ -33,19 +33,31 @@ if (session_status() === PHP_SESSION_NONE) {
 date_default_timezone_set('Africa/Accra');
 
 // Security response headers (sent before any body output; safe under ob_start).
-// script-src 'self' blocks inline/injected <script>, the main XSS lever; inline
-// style attributes are allowed (low risk) so existing markup keeps working.
+// Allows Paystack Inline checkout JS and iframes for Task 13 payment processing.
 if (!headers_sent()) {
     header('X-Content-Type-Options: nosniff');
-    header('X-Frame-Options: DENY');
     header('Referrer-Policy: same-origin');
-    header("Content-Security-Policy: default-src 'self'; img-src 'self' data:; "
+    header("Content-Security-Policy: default-src 'self'; "
+         . "img-src 'self' data: https:; "
          . "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
-         . "font-src 'self' https://fonts.gstatic.com; script-src 'self'; form-action 'self'; "
-         . "base-uri 'self'; frame-ancestors 'none'");
+         . "font-src 'self' https://fonts.gstatic.com; "
+         . "script-src 'self' 'unsafe-inline' https://js.paystack.co; "
+         . "frame-src 'self' https://checkout.paystack.com https://standard.paystack.co https://*.paystack.co https://*.paystack.com; "
+         . "connect-src 'self' https://api.paystack.co https://checkout.paystack.com https://*.paystack.co https://*.paystack.com; "
+         . "form-action 'self'; "
+         . "base-uri 'self';");
 }
 
 require_once __DIR__ . '/db_class.php';
+
+// Paystack API default constants (Task 13) — can be overridden in core/db_cred.php
+if (!defined('PAYSTACK_PUBLIC_KEY')) {
+    define('PAYSTACK_PUBLIC_KEY', 'pk_test_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx');
+}
+if (!defined('PAYSTACK_SECRET_KEY')) {
+    define('PAYSTACK_SECRET_KEY', 'sk_test_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx');
+}
+
 
 /**
  * Append a timestamped line to error/error.log (the project's own logger).

@@ -71,7 +71,8 @@ require_once __DIR__ . '/layout/header.php';
         </div>
 
         <p class="cart-buttons">
-            <a class="btn" href="<?php echo app_url('views/cart.php'); ?>">Back to Cart</a>
+            <a class="btn btn-secondary" href="<?php echo app_url('views/cart.php'); ?>">&larr; Back to Cart</a>
+            <a class="btn btn-primary" href="<?php echo app_url('views/payment.php'); ?>">Proceed to Payment &rarr;</a>
         </p>
     </section>
 </div>
